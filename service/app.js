@@ -15,9 +15,44 @@ function createEnum(labels) {
     return e;
 }
 
-const Visibility = createEnum(["private", "public"]);
-const Importance = createEnum(["unimportant", "important"]);
-const Urgency = createEnum(["critical", "urgent", "pressing", "casual", "daily"]);
+const Importance = createEnum(["important", "unimportant"]);
+
+// Core logic
+const logMinimumPeriod = 10 * 1000;
+let logLastTime = Date.now() - logMinimumPeriod - 1;
+let logTimeoutId = null;
+const logMessageQueue = [];
+function logScheduleWorkerIfNeeded() {
+    if (logMessageQueue.length > 0 && !logTimeoutId) {
+        logTimeoutId = setTimeout(logWorker, logMinimumPeriod);
+    }
+}
+
+function logSendMessage(message) {
+    logLastTime = Date.now();
+    console.log(`${(new Date()).toISOString()} ${message.channel}: ${message.message}`);
+
+    // TODO: Mobile notification
+}
+
+function logWorker() {
+    logTimeoutId = null;
+
+    if (logMessageQueue.length > 0) {
+        logSendMessage(logMessageQueue.pop())
+        logScheduleWorkerIfNeeded();
+    }
+}
+
+function logMessage(message) {
+    if (logMessageQueue.length <= 0 && logLastTime + logMinimumPeriod <= Date.now()) {
+        logMessageQueue.push(message);
+        logWorker();
+    } else if (message.importance !== Importance.unimportant) {
+        logMessageQueue.push(message);
+        logScheduleWorkerIfNeeded();
+    }
+}
 
 // Logging interface
 const statusCode = {
@@ -60,11 +95,9 @@ function createOptionalValidator(validator) {
 }
 
 const logValidators = {
-    message: createStringValidator(/.+/),
+    message: createStringValidator(/.{1,1024}/),
     channel: createStringValidator(/^[a-z][a-z0-9]{0,7}$/),
-    visibility: createOptionalValidator(createEnumValidator(Visibility)),
     importance: createOptionalValidator(createEnumValidator(Importance)),
-    urgency: createOptionalValidator(createEnumValidator(Urgency)),
 }
 
 function validate(validators, input) {
@@ -87,23 +120,31 @@ function validate(validators, input) {
 app.use(bodyParser.json());
 
 app.post("/log/:channel", function (request, response) {
-    const { valid, message/*, channel, visibility, importance, urgency*/ } = validate(logValidators, {
+    const message = validate(logValidators, {
         message: request.body.m,
         channel: request.params.channel,
-        visibility: request.body.v,
         importance: request.body.i,
-        urgency: request.body.u,
     });
 
-    if (valid) {
-        // TODO: Fancier logic
-        console.log(message);
+    if (message.valid) {
+        logMessage(message);
 
         // Respond immediately
         response.send();
     } else {
         response.status(statusCode.badRequest).send();
     }
+});
+
+// Error handlers
+app.all("/*", function (request, response) {
+    console.log(`${statusCode.notFound}: ${request.method} ${request.originalUrl}`);
+    response.status(statusCode.notFound).send();
+});
+
+app.use(function (err, request, response, next) {
+    console.error(err);
+    response.status(statusCode.internalServerError).send();
 });
 
 app.listen(port, "localhost", () => console.log(`Listening on port ${port}...`));
