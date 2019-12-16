@@ -1,0 +1,7 @@
+{
+  "name": "sslog",
+  "version": "1.0.0",
+  "description": "Real-time local alerting library",
+  "main": "sslog.js",
+  "license": "MIT"
+}
