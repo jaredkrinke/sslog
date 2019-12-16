@@ -2,23 +2,12 @@ const process = require("process");
 const express = require("express");
 const bodyParser = require("body-parser");
 const app = express();
-const port = 7373;
+const sslog = require("../lib/sslog.js");
+
+const logMinimumPeriod = 10 * 1000;
 const trace = (process.env.TRACE === "1");
 
-// TODO: Move to lib
-function createEnum(labels) {
-    let e = {};
-    labels.forEach((label, index) => {
-        e[label] = index;
-    });
-    e._length = labels.length;
-    return e;
-}
-
-const Importance = createEnum(["important", "unimportant"]);
-
 // Core logic
-const logMinimumPeriod = 10 * 1000;
 let logLastTime = Date.now() - logMinimumPeriod - 1;
 let logTimeoutId = null;
 const logMessageQueue = [];
@@ -39,6 +28,7 @@ function logWorker() {
     logTimeoutId = null;
 
     if (logMessageQueue.length > 0) {
+        // Note: Last in, first out
         logSendMessage(logMessageQueue.pop())
         logScheduleWorkerIfNeeded();
     }
@@ -48,7 +38,7 @@ function logMessage(message) {
     if (logMessageQueue.length <= 0 && logLastTime + logMinimumPeriod <= Date.now()) {
         logMessageQueue.push(message);
         logWorker();
-    } else if (message.importance !== Importance.unimportant) {
+    } else if (message.importance !== sslog.Importance.unimportant) {
         logMessageQueue.push(message);
         logScheduleWorkerIfNeeded();
     }
@@ -97,7 +87,7 @@ function createOptionalValidator(validator) {
 const logValidators = {
     message: createStringValidator(/.{1,1024}/),
     channel: createStringValidator(/^[a-z][a-z0-9]{0,7}$/),
-    importance: createOptionalValidator(createEnumValidator(Importance)),
+    importance: createOptionalValidator(createEnumValidator(sslog.Importance)),
 }
 
 function validate(validators, input) {
@@ -147,4 +137,4 @@ app.use(function (err, request, response, next) {
     response.status(statusCode.internalServerError).send();
 });
 
-app.listen(port, "localhost", () => console.log(`Listening on port ${port}...`));
+app.listen(sslog.port, "localhost", () => console.log(`Listening on port ${sslog.port}...`));
